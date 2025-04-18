@@ -2,6 +2,61 @@ import pandas as pd
 import numpy as np
 import pandas_ta as ta
 
+NANOSECOND = 1
+MICROSECOND = 1000
+MILLISECOND = 1000000
+SECOND = 1000000000
+
+from typing import Union
+
+
+def trades_balance(trades_df: pd.DataFrame, window: Union[str, int]) -> pd.Series:
+    sells = trades_df["ask_amount"].rolling(window=window, min_periods=1).sum()
+    buys = trades_df["bid_amount"].rolling(window=window, min_periods=1).sum()
+    return (sells - buys) / (sells + buys + 1e-8)
+
+
+def calc_imbalance(lobs, depth):
+    """
+    Computes the order book imbalance.
+
+    Parameters:
+    - lob: pd.DataFrame row containing LOB data.
+
+    Returns:
+    - imbalance_value: float
+    """
+    bid_amount = 0
+    ask_amount = 0
+    for i in range(depth):
+        bid_amount += lobs[f"bids[{i}].amount"]
+        ask_amount += lobs[f"asks[{i}].amount"]
+    imbalance_value = (bid_amount - ask_amount) / (bid_amount + ask_amount)
+    return imbalance_value
+
+
+def vwap(books_df: pd.DataFrame, lvl_count: int) -> pd.Series:
+    """Volume-weighted average price."""
+    ask_weighted_price = sum(
+        books_df[f"asks[{i}].price"] * books_df[f"asks[{i}].amount"]
+        for i in range(lvl_count)
+    )
+    ask_volume = sum(books_df[f"asks[{i}].amount"] for i in range(lvl_count))
+
+    bid_weighted_price = sum(
+        books_df[f"bids[{i}].price"] * books_df[f"bids[{i}].amount"]
+        for i in range(lvl_count)
+    )
+    bid_volume = sum(books_df[f"bids[{i}].amount"] for i in range(lvl_count))
+
+    total_weighted_price = ask_weighted_price + bid_weighted_price
+    total_volume = ask_volume + bid_volume
+
+    vwap = total_weighted_price / total_volume
+
+    return vwap / books_df["mid_price"]
+
+
 def calc_features(
         lobs: pd.DataFrame | None,
         agg_trades: pd.DataFrame | None,
@@ -9,8 +64,6 @@ def calc_features(
         target_data: pd.DataFrame | None,
     ) -> pd.DataFrame:
         """
-        Calculates features using provided functions and aligns them with target_data.
-
         Parameters:
         - lobs: pd.DataFrame of limit orderbooks.
         - agg_trades: pd.DataFrame of aggregated trades.
